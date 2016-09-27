@@ -1,0 +1,9 @@
+flags: {}
+extra-package-dbs: []
+packages:
+- '.'
+extra-deps:
+- gloss-1.10.2.3
+- gloss-rendering-1.10.3.3
+- netwire-5.0.0
+resolver: lts-6.12

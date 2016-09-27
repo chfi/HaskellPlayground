@@ -1,0 +1,34 @@
+
+./src/Main.hs,733
+module Main Main6,7
+import import15,16
+screenWidth, screenHeight screenHeight31,32
+screenWidth,screenWidth31,32
+(s(32,33
+newtype Polar Polar35,36
+    Polar Polar36,37
+polarToCartesian polarToCartesian38,39
+polarToCartesian polarToCartesian39,40
+pos' pos'48,49
+pos pos54,55
+vel vel60,61
+vel' vel'66,67
+vel'' vel''75,76
+velX velX90,91
+velX' velX'98,99
+velY velY107,108
+velY' velY'115,116
+inputWire inputWire122,123
+inputWire inputWire123,124
+parseEvents parseEvents129,130
+parseEvents parseEvents130,131
+getEvents getEvents140,141
+getEvents getEvents141,142
+isKeyDown isKeyDown144,145
+isKeyDown isKeyDown145,146
+runGameWire runGameWire156,157
+main main172,173
+main main173,174
+
+./Setup.hs,15
+main main1,2

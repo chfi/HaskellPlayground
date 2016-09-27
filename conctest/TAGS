@@ -1,0 +1,33 @@
+
+./src/Main.hs,647
+module Main Main0,1
+printChan printChan18,19
+printChan printChan19,20
+sendMsg sendMsg24,25
+sendMsg sendMsg25,26
+printer printer30,31
+printer printer31,32
+mkChat mkChat34,35
+mkChat mkChat38,39
+chat chat43,44
+chat chat44,45
+messages messages51,52
+messages messages52,53
+genMessage genMessage60,61
+genMessage genMessage61,62
+chatBot chatBot67,68
+chatBot chatBot68,69
+genName genName76,77
+genName genName77,78
+mkChatBot mkChatBot84,85
+mkChatBot mkChatBot85,86
+birther birther95,96
+killer killer102,103
+killer killer103,104
+exitW exitW108,109
+exitW exitW109,110
+main main113,114
+main main114,115
+
+./Setup.hs,15
+main main1,2

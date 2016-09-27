@@ -1,0 +1,30 @@
+
+./src/Main.hs,646
+module Main Main0,1
+initX initX17,18
+initX initX18,19
+yPosition yPosition23,24
+yPosition yPosition24,25
+quadSize quadSize29,30
+quadSize quadSize30,31
+speed speed35,36
+speed speed36,37
+isKeyDown isKeyDown42,43
+isKeyDown isKeyDown43,44
+leftKeyDown leftKeyDown53,54
+leftKeyDown leftKeyDown54,55
+rightKeyDown rightKeyDown59,60
+rightKeyDown rightKeyDown60,61
+velocity velocity65,66
+velocity velocity66,67
+position position74,75
+position position75,76
+runNetwork' runNetwork'80,81
+runNetwork' runNetwork'81,82
+runNetwork runNetwork109,110
+runNetwork runNetwork110,111
+main main118,119
+main main119,120
+
+./Setup.hs,15
+main main1,2

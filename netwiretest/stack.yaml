@@ -1,0 +1,8 @@
+flags: {}
+extra-package-dbs: []
+packages:
+- '.'
+extra-deps:
+- GLFW-0.5.2.5
+- netwire-5.0.0
+resolver: lts-6.12
