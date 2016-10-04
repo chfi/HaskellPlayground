@@ -2,6 +2,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE Arrows #-}
+{-# LANGUAGE RecordWildCards #-}
 
 
 module Main where
@@ -10,9 +11,11 @@ module Main where
 import Control.Arrow
 import Control.Category
 import qualified Control.Monad as CM
+import Debug.Trace as Debug
 import Foreign.C.Types
 import Linear
 import Linear.Affine
+import Linear.Metric as LM
 import SDL (($=))
 import qualified SDL
 import qualified SDL.Input.Keyboard.Codes as Key
@@ -32,15 +35,27 @@ import Control.Applicative
 screenWidth, screenHeight :: CInt
 (screenWidth, screenHeight) = (640, 480)
 
+-- pTail should be a NonEmpty (V2 Double)
+data Player = Player { pHead :: V2 Double
+                     , pTail :: [V2 Double]
+                     , pDist :: Double
+                     }
 
-newtype Polar =
-    Polar (V2 Double)
 
-polarToCartesian :: Polar -> V2 Double
-polarToCartesian (Polar (V2 a r)) = V2 x y
-  where
-    x = r * cos a
-    y = r * sin a
+playerExtendTail :: Player -> Player
+playerExtendTail p@Player{..} =
+  let d = LM.distance (head pTail) pHead
+      pT' = if d > pDist then pHead : pTail else pTail
+  in p { pTail = pT' }
+
+
+plWire :: HasTime t s => Player -> Wire s () IO (Set SDL.Keysym) Player
+plWire p = proc keys -> do
+  pH <- integral (pHead p) . vel -< keys
+  rec pT <- delay (pTail p) -< pT'
+      let p' = playerExtendTail p { pHead = pH, pTail = pT }
+          pT' = pTail p'
+  returnA -< p'
 
 
 pos'
@@ -146,13 +161,21 @@ isKeyDown :: SDL.Scancode -> Set SDL.Keysym -> Bool
 isKeyDown sc = not . Set.null . Set.filter ((== sc) . SDL.keysymScancode)
 
 
+drawPlayer :: SDL.Renderer -> Player -> IO ()
+drawPlayer r Player{..} = do
+  let hd = Just $ SDL.Rectangle (P $ fmap round pHead) (V2 30 30)
+      tl = fmap (\p -> Just $ SDL.Rectangle (P $ fmap round p) (V2 10 10)) pTail
+  sequence_ (fmap (SDL.fillRect r) tl)
+  SDL.fillRect r hd
+  return ()
+
+
 -- Main loop
 runGameWire
     :: Set SDL.Keysym
     -> SDL.Renderer
     -> Session IO s
-    -> Wire s e IO (Set SDL.Keysym) (V2 Double)
-    -- -> V2 Double
+    -> Wire s e IO (Set SDL.Keysym) Player
     -> IO b
 runGameWire keys r s w = do
     SDL.rendererDrawColor r $= V4 0 0 0 0
@@ -163,11 +186,17 @@ runGameWire keys r s w = do
     SDL.rendererDrawColor r $= pure maxBound
     SDL.clear r
     SDL.rendererDrawColor r $= V4 0 0 maxBound maxBound
-    SDL.fillRect r (Just (SDL.Rectangle (P $ fmap round p') (V2 30 30)))
+    drawPlayer r p'
     SDL.present r
     SDL.delay (1000 `div` 60)
     runGameWire ev r s' w'
 
+
+player :: Player
+player = Player { pHead = (V2 300 300)
+                , pTail = [(V2 100 100)]
+                , pDist = 1
+                }
 
 
 main :: IO ()
@@ -192,7 +221,9 @@ main = do
             { SDL.rendererType = SDL.AcceleratedRenderer
             , SDL.rendererTargetTexture = False
             }
-    _ <- runGameWire Set.empty renderer clockSession_ $ pos' (V2 300 300)
+    -- _ <- runGameWire Set.empty renderer clockSession_ $ pos' (V2 300 300)
+    -- _ <- runGameWire Set.empty renderer clockSession_ $ plpos' player
+    _ <- runGameWire Set.empty renderer clockSession_ $ plWire player
     SDL.destroyRenderer renderer
     SDL.destroyWindow window
     SDL.quit
