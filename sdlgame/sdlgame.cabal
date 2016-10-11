@@ -21,3 +21,4 @@ executable sdlgame
                      , sdl2
                      , netwire > 5
                      , containers
+                     , vector

@@ -7,6 +7,7 @@
 
 module Main where
 
+import qualified Data.Vector.Storable.Mutable as Vec
 
 import Control.Arrow
 import Control.Category
@@ -16,6 +17,7 @@ import Foreign.C.Types
 import Linear
 import Linear.Affine
 import Linear.Metric as LM
+import Linear.V2 (angle)
 import SDL (($=))
 import qualified SDL
 import qualified SDL.Input.Keyboard.Codes as Key
@@ -25,6 +27,8 @@ import qualified Data.Set as Set
 import Control.Wire
 import FRP.Netwire
 
+
+import System.IO
 import Prelude hiding ((.), id)
 
 
@@ -35,13 +39,26 @@ import Control.Applicative
 screenWidth, screenHeight :: CInt
 (screenWidth, screenHeight) = (640, 480)
 
+
+playerRadius = 5
+
+
+type PlayerHead = V2 Double
+type PlayerTail = [V2 Double]
+
 -- pTail should be a NonEmpty (V2 Double)
 data Player = Player { pHead :: V2 Double
                      , pTail :: [V2 Double]
                      , pDist :: Double
+                     , pAlive :: Bool
+                     -- , pAngle :: Double -- Current player angle in radians
+                     -- , pSpeed :: Double
                      }
 
 
+-- Ideally, this should be framerate independent,
+-- that is, it should place however many points into the tail
+-- that fit between the current head of the tail and the player head
 playerExtendTail :: Player -> Player
 playerExtendTail p@Player{..} =
   let d = LM.distance (head pTail) pHead
@@ -49,55 +66,92 @@ playerExtendTail p@Player{..} =
   in p { pTail = pT' }
 
 
+-- removes the first parts of the tail that are "colliding" with the head
+-- returns a tail that can be collided with by the player, without false positives
+playerSafeTail :: Player -> PlayerTail
+playerSafeTail Player{..} =
+  dropWhile (\th -> LM.distance pHead th < playerRadius*2) pTail
+
+playerCheckCollision :: Player -> PlayerTail -> Bool
+playerCheckCollision Player{..} p2t =
+  any (\th -> LM.distance pHead th < playerRadius*2) p2t
+
+
+selfColWire :: HasTime t s => Wire s () IO Player Bool
+selfColWire = proc p -> do
+  let tl = playerSafeTail p
+      val = playerCheckCollision p tl
+  returnA -< val
+
 plWire :: HasTime t s => Player -> Wire s () IO (Set SDL.Keysym) Player
 plWire p = proc keys -> do
-  pH <- integral (pHead p) . vel -< keys
+  pH <- plPosWire (pHead p) -< keys
   rec pT <- delay (pTail p) -< pT'
       let p' = playerExtendTail p { pHead = pH, pTail = pT }
           pT' = pTail p'
-  returnA -< p'
+  alive <- (arr not) . selfColWire -< p'
+  returnA -< p' { pAlive = alive }
 
 
-pos'
-    :: HasTime t s
-    => V2 Double -> Wire s () IO (Set SDL.Keysym) (V2 Double)
-pos' p = integral p . vel
+plPosWire :: HasTime t s => (V2 Double) -> Wire s () IO (Set SDL.Keysym) (V2 Double)
+plPosWire init = proc keys -> do
+  pos <- integral init . (angvel >>> polarVel) -< keys
+  returnA -< pos
 
+angWire :: HasTime t s => Double -> Wire s () IO (Set SDL.Keysym) Double
+angWire da = proc keys -> do
+  -- pretty ugly --- need to create constant arrows to feed the speed, since it's a double.
+  va <-  (arr (const (-da))) . when (isKeyDown Key.ScancodeA)
+     <|> (arr (const   da ))   . when (isKeyDown Key.ScancodeD)
+     <|> 0
+          -< keys
 
-pos
-    :: HasTime t s
-    => Wire s () IO (Set SDL.Keysym) (V2 Double)
-pos = integral (V2 200 100) . vel
+  integral 0 -< va
+
+-- wire that takes an angle and returns a cartesian vector
+polarVelWire :: HasTime t s => Double -> Wire s () IO Double (V2 Double)
+polarVelWire speed = proc ang -> do
+  v <- arr angle -< ang
+  returnA -< (v * (V2 speed speed))
 
 
 vel
     :: HasTime t s
     => Wire s () IO (Set SDL.Keysym) (V2 Double)
-vel = liftA (uncurry V2) $ velX &&& velY
+vel = proc keys -> do
+  vx <-  (-100) . when (isKeyDown Key.ScancodeA)
+     <|>   100  . when (isKeyDown Key.ScancodeD)
+     <|> 0
+          -< keys
+  vy <-  (-100) . when (isKeyDown Key.ScancodeW)
+     <|>   100  . when (isKeyDown Key.ScancodeS)
+     <|> 0
+          -< keys
+  returnA -< V2 vx vy
+
+
+angvel :: HasTime t s => Wire s () IO (Set SDL.Keysym) Double
+angvel = proc keys -> do
+  va <-  (-3) . when (isKeyDown Key.ScancodeA)
+     <|>   3  . when (isKeyDown Key.ScancodeD)
+     <|> 0
+          -< keys
+  va' <- integral 0 -< va
+  returnA -< va'
+
+-- wire that takes an angle and returns a cartesian vector
+-- i suppose this should return a normalized movement vector
+polarVel :: HasTime t s => Wire s () IO Double (V2 Double)
+polarVel = proc ang -> do
+  v <- arr angle -< ang
+  returnA -< (v * 100)
+
 
 
 vel'
     :: HasTime t s
     => Wire s () IO (Set SDL.Keysym) (V2 Double)
-vel' = proc keys -> do
-  vx <- velX  -< keys
-  vy <- velY' -< keys
-  returnA -< V2 vx vy
-
-
-vel''
-    :: HasTime t s
-    => Wire s () IO (Set SDL.Keysym) (V2 Double)
-vel'' = proc keys -> do
-  vx <-  (-200) . when (isKeyDown Key.ScancodeA)
-     <|>   200  . when (isKeyDown Key.ScancodeD)
-     <|> 0
-          -< keys
-  vy <-  (-200) . when (isKeyDown Key.ScancodeW)
-     <|>   200  . when (isKeyDown Key.ScancodeS)
-     <|> 0
-          -< keys
-  returnA -< V2 vx vy
+vel' = liftA (uncurry V2) $ velX &&& velY
 
 
 velX
@@ -108,14 +162,6 @@ velX =
     <|> 200 . when (isKeyDown Key.ScancodeD)
     <|> 0
 
-velX'
-    :: HasTime t s
-    => Wire s () IO (Set SDL.Keysym) Double
-velX' = proc keys -> do
-  let l = isKeyDown Key.ScancodeA keys
-      r = isKeyDown Key.ScancodeD keys
-  returnA -< if l then (-200) else if r then 200 else 0
-
 
 velY
     :: HasTime t s
@@ -125,20 +171,10 @@ velY =  pure (-200) . when (isKeyDown Key.ScancodeW)
     <|> pure 0
 
 
-velY'
-    :: HasTime t s
-    => Wire s () IO (Set SDL.Keysym) Double
-velY' =  for 1 . pure (-200) --> for 1 . pure 0   --> velY' . when (isKeyDown Key.ScancodeW)
-     <|> for 1 . pure     0  --> for 1 . pure 200 --> velY' . when (isKeyDown Key.ScancodeS)
-     <|> pure 0
-
-
 
 -- Wire that fetches SDL keyboard events & outputs a set containing all pressed keys
 inputWire :: Wire s e IO (Set SDL.Keysym) (Set SDL.Keysym)
 inputWire = mkGen_ $ fmap Right . getEvents
-
-
 
 
 -- SDL event helper functions
@@ -161,13 +197,57 @@ isKeyDown :: SDL.Scancode -> Set SDL.Keysym -> Bool
 isKeyDown sc = not . Set.null . Set.filter ((== sc) . SDL.keysymScancode)
 
 
+
+circleTexture :: SDL.Renderer -> IO SDL.Texture
+circleTexture r = do
+  t <- SDL.createTexture r SDL.RGBA8888 SDL.TextureAccessTarget (V2 20 20)
+  SDL.rendererRenderTarget r $= Just t
+
+  SDL.rendererDrawColor r $= V4 0 0 0 0
+  SDL.clear r
+  let w = 20 :: CInt
+      h = 20 :: CInt
+      p = 4 :: CInt
+      inCircle :: V2 CInt -> Bool
+      inCircle p = LM.distance (fmap fromIntegral p) (V2 10 10) < 10
+      points = [(x,y) | x <- [0..19], y <- [0..19], inCircle (V2 x y)]
+
+  SDL.rendererDrawColor r $= V4 maxBound maxBound maxBound maxBound
+  sequence_ $ fmap (\(x,y) -> SDL.drawPoint r (P $ V2 x y)) points
+
+  SDL.rendererRenderTarget r $= Nothing
+  SDL.textureBlendMode t $= SDL.BlendAlphaBlend
+  return t
+
+
 drawPlayer :: SDL.Renderer -> Player -> IO ()
 drawPlayer r Player{..} = do
-  let hd = Just $ SDL.Rectangle (P $ fmap round pHead) (V2 30 30)
+  t <- circleTexture r
+  let hd = Just $ SDL.Rectangle (P $ fmap round pHead) (V2 10 10)
       tl = fmap (\p -> Just $ SDL.Rectangle (P $ fmap round p) (V2 10 10)) pTail
-  sequence_ (fmap (SDL.fillRect r) tl)
-  SDL.fillRect r hd
+      draw' x = SDL.copy r t Nothing x
+  draw' hd
+  sequence_ (fmap draw' tl)
   return ()
+
+
+circleSurf :: IO SDL.Surface
+circleSurf = do
+  let w = 20 :: CInt
+      h = 20 :: CInt
+      p = 4 :: CInt
+      inCircle x y = (x*x + y*y) < 25
+  vec <- Vec.new (fromIntegral (w*h*w*p))
+  Vec.set vec 0x00
+  let points = [(x,y) | x <- [0..19], y <- [0..19], inCircle x y]
+      drawP i v = sequence_ $ fmap (\x -> Vec.write v x 0xFF) i
+      is = [[i, i+1, i+2, i+3] | i <- [0..20*20], i `mod` 5 == 0]
+  sequence_ $ fmap (\x -> drawP x vec) is
+  SDL.createRGBSurfaceFrom vec (V2 w h) (w*p) SDL.RGBA8888
+
+-- the player drawing function should really fill in teh whole area between the pieces...
+-- if I had a function that does so between two points, I could fold over the tail, with
+-- the head as initial value.
 
 
 -- Main loop
@@ -183,24 +263,25 @@ runGameWire keys r s w = do
     (ds,s') <- stepSession s
     (Right ev,_) <- stepWire inputWire ds $ Right keys
     (Right p',w') <- stepWire w ds $ Right ev
-    SDL.rendererDrawColor r $= pure maxBound
-    SDL.clear r
+    CM.when (playerCheckCollision p' (playerSafeTail p')) (putStrLn "Player colliding")
     SDL.rendererDrawColor r $= V4 0 0 maxBound maxBound
     drawPlayer r p'
     SDL.present r
-    SDL.delay (1000 `div` 60)
+    -- SDL.delay (1000 `div` 10)
     runGameWire ev r s' w'
 
 
 player :: Player
 player = Player { pHead = (V2 300 300)
-                , pTail = [(V2 100 100)]
+                , pTail = [(V2 300 300)]
                 , pDist = 1
+                , pAlive = True
                 }
 
 
 main :: IO ()
 main = do
+    hSetBuffering stdout NoBuffering
     SDL.initialize [SDL.InitVideo]
     SDL.HintRenderScaleQuality $= SDL.ScaleLinear
     do renderQuality <- SDL.get SDL.HintRenderScaleQuality
@@ -218,11 +299,9 @@ main = do
             window
             (-1)
             SDL.RendererConfig
-            { SDL.rendererType = SDL.AcceleratedRenderer
+            { SDL.rendererType = SDL.AcceleratedVSyncRenderer
             , SDL.rendererTargetTexture = False
             }
-    -- _ <- runGameWire Set.empty renderer clockSession_ $ pos' (V2 300 300)
-    -- _ <- runGameWire Set.empty renderer clockSession_ $ plpos' player
     _ <- runGameWire Set.empty renderer clockSession_ $ plWire player
     SDL.destroyRenderer renderer
     SDL.destroyWindow window
