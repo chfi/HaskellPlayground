@@ -1,0 +1,7 @@
+flags: {}
+extra-package-dbs: []
+packages:
+- '.'
+extra-deps:
+- gloss-raster-1.10.2.4
+resolver: lts-7.18
